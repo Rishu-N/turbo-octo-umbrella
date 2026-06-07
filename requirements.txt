@@ -1,0 +1,31 @@
+# Core ML
+sentence-transformers==2.7.0
+transformers==4.39.3
+scikit-learn==1.4.2
+setfit==1.0.3
+datasets==2.18.0
+numpy==1.26.4
+pandas==2.2.1
+
+# Pinned: setfit 1.0.3 imports `DatasetFilter`, removed in huggingface_hub>=0.24.
+# 0.23.5 is the last version with it and still satisfies transformers/ST/datasets above.
+huggingface_hub==0.23.5
+
+# CPU inference path (used in Phase 3: ONNX export + int8)
+optimum[onnxruntime]==1.19.0
+onnxruntime==1.17.3
+
+# Config + optional serving
+pyyaml==6.0.1
+fastapi==0.110.1
+uvicorn==0.29.0
+
+# Optional (config-gated; safe to skip if not used in your environment).
+# `fasttext-wheel` is the prebuilt-wheel drop-in for `fasttext` — avoids the
+# pybind11/C++ build step that fasttext==0.9.2 needs on Python 3.11+.
+indic-transliteration==2.3.51
+fasttext-wheel==0.9.2
+hnswlib==0.8.0
+
+# Tests
+pytest==8.1.1

@@ -1,0 +1,89 @@
+# Banking Intent Classifier — central config.
+# All tunables live here. No magic numbers in code.
+# See CLAUDE.md for the design constraints these values implement.
+
+encoder:
+  model_name: intfloat/multilingual-e5-small
+  query_prefix: "query: "        # e5 models require this prefix on inputs
+  max_seq_length: 96             # 64–96 keeps CPU latency in budget
+  backend: pytorch               # pytorch | onnx_fp32 | onnx_int8 (Phase 3 enables onnx)
+
+history:
+  num_turns: 2                   # last 1–2 turns + current message (CLAUDE.md §7)
+  separator: " [SEP] "
+
+approach: frozen                 # frozen (Approach A) | setfit (Approach B)
+
+setfit:
+  # Approach B contrastive fine-tune knobs. backbone: null = use encoder.model_name.
+  # For the quality lever, set: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+  backbone: null
+  num_epochs: 1
+  num_iterations: 20             # contrastive pairs sampled per example
+  batch_size: 16
+  body_learning_rate: 2.0e-5     # encoder fine-tune LR
+  head_learning_rate: 1.0e-2     # SetFit's internal head LR
+
+data:
+  # User-supplied banking dataset (~1,500 rows, 17 intents, 8–243 examples per intent)
+  user_dataset_path: data/raw/user_dataset.csv   # placeholder — point at the real file in Phase 1
+  columns:
+    query: current_user_query
+    history: conversation_history
+    label: expected_intent
+  # Stratified-split safeguard for tiny classes (smallest = 8 examples)
+  min_samples_per_split: 2
+
+reranker:
+  # Optional two-stage upgrade: stage-1 (encoder + LR head) proposes the top_k
+  # intents, a cross-encoder re-scores them. Parallel/switchable so you can A/B
+  # test {frozen, setfit} x {rerank off, rerank on} on the same split.
+  # NOTE: a cross-encoder is a second transformer pass per candidate — heavier
+  # than the bi-encoder hot path. Keep `selective` on, or run it off the hot
+  # path, to respect the 100 ms CPU budget (see CLAUDE.md §2/§3).
+  enabled: false                 # apply reranking at inference (eval --reranker auto follows this)
+  model_name: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1   # multilingual CE; verify license before prod
+  top_k: 5                       # stage-1 candidates handed to the reranker
+  num_epochs: 1
+  batch_size: 16
+  num_negatives: 4               # hard negatives per positive (mined from stage-1 top_k)
+  max_length: 128
+  exemplars_per_intent: 5        # training utterances used to describe each intent
+  use_history: false             # pair the cross-encoder on current query only (true = prepend history)
+  selective: true                # only rerank when stage-1 is uncertain (bounds latency)
+  uncertainty_margin: 0.15       # rerank a row only if (top1 - top2) prob < this margin
+  score_weight: 0.5              # blend: final = w*stage1 + (1-w)*reranker  (0.0 = pure reranker)
+
+oos:
+  method: threshold              # threshold | prototype | energy
+  threshold: 0.45                # calibrated on dev set in Phase 2
+
+preprocess:
+  language_id: false             # optional fastText LID
+  transliterate_romanized: false # optional Romanized-Hindi → Devanagari
+
+training:
+  class_weight: balanced
+  seed: 42
+  test_size: 0.15
+  dev_size: 0.15
+
+latency:
+  budget_ms: 100                 # END-TO-END at batch=1 on production CPU
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  intents: data/intents
+  models: models
+  encoder_onnx: models/encoder.onnx
+  encoder_onnx_int8: models/encoder.int8.onnx
+  classifier: models/classifier.joblib
+  prototypes: models/prototypes.npz
+  threshold: models/threshold.json
+  reranker_dir: models/reranker                       # fine-tuned cross-encoder
+  reranker_candidates: models/reranker_candidates.json # intent profiles + label map
+
+runtime:
+  intra_op_threads: 0            # 0 = use physical cores
+  inter_op_threads: 1
