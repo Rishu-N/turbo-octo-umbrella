@@ -1,0 +1,130 @@
+# config.yaml — single source of truth for all tunables. No magic numbers in code.
+# Self-improving semantic-cache intent classifier (v2). See PROJECT_CONTEXT.md for the "why".
+
+# ---------------------------------------------------------------------------------------
+# Jina v3 embeddings API — the ONLY network dependency; every embed() is a remote call.
+# The API key is read from the JINA_API_KEY environment variable. NEVER put a key here.
+# ---------------------------------------------------------------------------------------
+jina:
+  api_url: "https://api.jina.ai/v1/embeddings"
+  model: "jina-embeddings-v3"
+  task: "classification"        # Jina v3 task-specific LoRA adapter — tunes embeddings for intent classification
+  dimensions: 256               # Matryoshka truncation: smaller store + faster search (MUST equal vector_store.dim)
+  normalize: true               # L2-normalize embeddings so cosine similarity == dot product
+  timeout_seconds: 5.0          # per-request network timeout
+  max_retries: 3                # retries with exponential backoff on transient failures
+  backoff_base_seconds: 0.5     # delay = backoff_base_seconds * (2 ** attempt)
+  batch_size: 32                # batch embeds where possible to amortize round-trips
+  embed_cache_path: "models/embed_cache.sqlite"   # persistent cache keyed by normalized text (never pay the API twice)
+
+# ---------------------------------------------------------------------------------------
+# Decision thresholds.
+# PLACEHOLDERS ONLY. These MUST be derived by scripts/calibrate_thresholds.py (Phase 6) on
+# held-out data. They are Jina-v3-specific — any value from the literature is for a different
+# model and must be re-derived. Do not trust these defaults in production.
+# ---------------------------------------------------------------------------------------
+thresholds:
+  t_high: 0.86        # query-alone semantic hit accepted if top similarity >= t_high
+  t_low: 0.78         # history-conditioned (escalation) acceptance threshold
+  t_low_floor: 0.65   # adaptive floor: t_low never drops below this (prevents threshold drift)
+  t_write: 0.90       # write-back gate: only cache an LLM fallback if its confidence >= t_write
+
+# ---------------------------------------------------------------------------------------
+# Normalization — typed-placeholder strategy (lifts cache hit-rate). See preprocess/normalize.py.
+# ---------------------------------------------------------------------------------------
+normalization:
+  lowercase: true
+  strip_punctuation: true
+  devanagari_numerals: true       # map Devanagari digits (०-९) to ASCII before placeholder logic
+  transliterate_romanized: false  # Romanized Hindi -> Devanagari before embedding (better cross-script hits; adds latency)
+  placeholders:                   # which entity types collapse to a typed token
+    amount: true                  # money (currency-tagged) -> <AMOUNT>
+    card:   true                  # long digit runs (13-19) -> <CARD>
+    phone:  true                  # phone-like (10-12 digits) -> <PHONE>
+    date:   true                  # dates -> <DATE>
+    month:  true                  # month names (EN/HI) -> <MONTH>
+    num:    true                  # leftover generic digits -> <NUM>
+    email:  true                  # emails -> <EMAIL>
+    url:    true                  # urls -> <URL>
+    id:     true                  # reference/transaction ids -> <ID>
+  # Tokens NEVER replaced because the number/word IS the banking signal (e.g. "$0.00", "twice").
+  # Configurable per §4.
+  meaningful_tokens_allowlist: ["0", "0.0", "0.00", "zero", "twice", "double"]
+
+# ---------------------------------------------------------------------------------------
+# Conversation history handling (escalation path only). See pipeline.py / §3.
+# Never concatenate full history into the embedded text — it destroys hit-rate.
+# ---------------------------------------------------------------------------------------
+history:
+  mode: "prev_intent"        # off | prev_intent | prev_intent_window
+  window_turns: 2            # prev_intent_window: how many prior turns to embed separately (late fusion)
+  fusion_weight: 0.7         # prev_intent_window: weight on the query vs the history-window embedding
+  referential_max_tokens: 4  # queries this short are written back namespaced by previous_intent (context-dependent)
+
+# ---------------------------------------------------------------------------------------
+# Learned head + combiner over Jina embeddings. See classifier/. (Phase 5)
+# ---------------------------------------------------------------------------------------
+combiner:
+  mode: "nn_then_head"          # nn_only | head_only | nn_then_head (cascade)
+  head_type: "logreg"           # logreg | nearest_centroid
+  calibration: "temperature"    # none | temperature (make head confidences comparable to thresholds)
+  head_threshold: 0.5           # min calibrated head probability to accept a head decision
+  head_path: "models/head.joblib"
+
+# ---------------------------------------------------------------------------------------
+# Vector store — semantic NN index over normalized, L2-normalized embeddings.
+# See store/vector_store.py. Swappable behind the store interface.
+# ---------------------------------------------------------------------------------------
+vector_store:
+  backend: "hnswlib"     # hnswlib | faiss
+  space: "cosine"        # cosine / ip on normalized vectors
+  dim: 256               # MUST equal jina.dimensions
+  max_elements: 100000   # initial index capacity (grows as the cache fills)
+  ef_construction: 200   # hnswlib build-time accuracy/speed tradeoff
+  ef_search: 64          # hnswlib query-time accuracy/speed tradeoff
+  M: 16                  # hnswlib graph connectivity
+  index_path: "models/vector_store.bin"
+  meta_path: "models/vector_store_meta.sqlite"   # id -> {intent, source, timestamp}
+
+# ---------------------------------------------------------------------------------------
+# Exact-match store — sub-millisecond local key -> intent. See store/exact_store.py.
+# ---------------------------------------------------------------------------------------
+exact_store:
+  backend: "sqlite"      # sqlite | json
+  path: "models/exact_store.sqlite"
+
+# ---------------------------------------------------------------------------------------
+# Write-back safety + eviction (error-amplification guard). See §6.
+# ---------------------------------------------------------------------------------------
+eviction:
+  ttl_days: 90           # write-back entries older than this may be evicted (0 = never evict by age)
+  max_entries: 50000     # LRU/size cap for write-back entries
+  protect_seed: true     # seed (ground-truth) entries are NEVER evicted
+audit:
+  log_path: "models/audit_log.jsonl"   # append-only log of every write-back (query, intent, confidence, source)
+  record_conflicts: true                # on a dedup conflict (same key, different intent) record rather than overwrite
+
+# ---------------------------------------------------------------------------------------
+# LLM fallback — interface + stub; the real classifier plugs in here. See llm/fallback.py / §5.
+# ---------------------------------------------------------------------------------------
+llm_fallback:
+  impl: "stub"                  # stub | <your real impl key>
+  stub_default_confidence: 0.75 # confidence the stub reports
+  oos_confidence_floor: 0.40    # if even the LLM is below this -> return the fallback (OOS) intent. See §8.
+
+# ---------------------------------------------------------------------------------------
+# Out-of-scope / fallback intent. See §8.
+# ---------------------------------------------------------------------------------------
+oos:
+  fallback_intent: "fallback"
+
+# ---------------------------------------------------------------------------------------
+# Paths + reproducibility.
+# ---------------------------------------------------------------------------------------
+paths:
+  intents: "data/intents.yaml"
+  seed_csv: "data/seed/seed.csv"
+  data_raw: "data/raw"          # drop your real BYO labeled data here on the work laptop
+  models_dir: "models"
+
+seed: 42

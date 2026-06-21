@@ -1,0 +1,15 @@
+# Real BYO labeled data lives on the work laptop; only the synthetic seed set is checked in.
+data/raw/*
+!data/raw/.gitkeep
+
+# Runtime cache / model artifacts (built locally; not checked in).
+models/*
+!models/.gitkeep
+
+# Belt-and-suspenders for store / index / cache / head files wherever they land.
+*.sqlite
+*.sqlite3
+*.bin
+*.joblib
+*.npz
+*.jsonl

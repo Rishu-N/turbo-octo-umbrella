@@ -1,0 +1,3 @@
+# Drop your real labeled banking data here (CSV) on the work laptop.
+# Contents are git-ignored; only this .gitkeep is tracked.
+# Expected schema mirrors data/seed/seed.csv — see PROJECT_CONTEXT.md "Data contract".

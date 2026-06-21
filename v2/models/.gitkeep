@@ -1,0 +1,3 @@
+# Built artifacts land here: exact store + vector index + embed cache (sqlite/bin),
+# the learned head (joblib), and the write-back audit log (jsonl).
+# Contents are git-ignored; only this .gitkeep is tracked.

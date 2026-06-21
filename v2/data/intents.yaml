@@ -1,0 +1,56 @@
+# intents.yaml — the intent taxonomy. Confusable clusters are intentional (the core difficulty:
+# separating semantically close intents). `fallback` is the explicit out-of-scope / none bucket (§8).
+#
+# Adding a new intent: add it here, add seed rows for it (data/seed/seed.csv), then refit the head /
+# add a centroid (Phase 5) or seed cache entries (Phase 3). NEVER retrain a base model to add an intent.
+
+intents:
+  # --- Card issues (confusable cluster) ----------------------------------------------
+  card_lost_or_stolen:
+    description: "User reports their card is lost or stolen and wants it blocked / replaced."
+  card_not_working:
+    description: "Physical or technical card failure (chip not read, generally not working)."
+  card_payment_declined:
+    description: "A specific payment/transaction was declined (limit, insufficient funds, blocked merchant)."
+  card_activation:
+    description: "User wants to activate a newly issued card."
+
+  # --- Transactions & disputes (confusable cluster) ----------------------------------
+  unrecognized_transaction:
+    description: "User sees a charge they do not recognize and suspects fraud or error."
+  duplicate_charge:
+    description: "User was charged more than once for the same purchase (charged twice / double)."
+  transaction_pending:
+    description: "User asks why a transaction is pending or when it will clear."
+  refund_status:
+    description: "User asks about the status of an expected refund."
+
+  # --- Transfers (confusable cluster) ------------------------------------------------
+  transfer_funds:
+    description: "User wants to send / transfer money to another account or payee."
+  transfer_failed:
+    description: "A transfer the user attempted did not go through."
+  transfer_limit_inquiry:
+    description: "User asks about transfer limits or wants them changed."
+
+  # --- Account & servicing -----------------------------------------------------------
+  balance_inquiry:
+    description: "User asks for their account balance."
+  account_statement:
+    description: "User requests a statement or transaction history."
+  change_pin:
+    description: "User wants to change or reset their card / account PIN."
+  update_contact_details:
+    description: "User wants to update phone / email / address on file."
+  loan_inquiry:
+    description: "User asks about loans (eligibility, EMI, application, balance)."
+  exchange_rate:
+    description: "User asks about currency exchange rates or foreign-currency charges."
+  fee_explanation:
+    description: "User asks why a fee / charge was applied to their account."
+  atm_issue:
+    description: "Problem at an ATM (cash not dispensed, card stuck, machine error)."
+
+  # --- Out of scope ------------------------------------------------------------------
+  fallback:
+    description: "Out-of-scope / none: nothing matches, or even the LLM is low-confidence. Route to human / none."
