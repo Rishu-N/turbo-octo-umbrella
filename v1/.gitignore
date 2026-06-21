@@ -1,0 +1,12 @@
+# Data artifacts (downloaded/derived; not checked in)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Model artifacts (built; not checked in)
+models/*
+!models/.gitkeep
+*.onnx
+*.joblib
+*.npz
